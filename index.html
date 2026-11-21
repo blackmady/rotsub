@@ -1,0 +1,2216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>旋转堆叠动态字幕生成器 v4 - 智能原子排版引擎</title>
+  <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.min.js"></script>
+  <style>
+    :root {
+      --bg-app: #0d0e12;
+      --bg-panel: #15171e;
+      --bg-card: #1c1f29;
+      --bg-input: #111319;
+      --border: #2a2e3d;
+      --border-focus: #ff2e4d;
+      --text-main: #f1f3f9;
+      --text-muted: #8b92a8;
+      --accent: #ff2e4d;
+      --blue: #3b82f6;
+      --green: #10b981;
+      --purple: #8b5cf6;
+      --radius: 8px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Source Han Sans SC", sans-serif;
+      background: var(--bg-app);
+      color: var(--text-main);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    header {
+      height: 52px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      flex-shrink: 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 15px;
+    }
+
+    .brand-badge {
+      background: linear-gradient(135deg, #ff1e1e, #ff5e3a);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 4px;
+      letter-spacing: 0.6px;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .status-pill {
+      font-size: 12px;
+      color: var(--text-muted);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      min-height: 0;
+    }
+
+    .sidebar {
+      width: 410px;
+      background: var(--bg-panel);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 16px;
+      gap: 14px;
+      flex-shrink: 0;
+    }
+
+    .sidebar::-webkit-scrollbar { width: 6px; }
+    .sidebar::-webkit-scrollbar-thumb { background: #2f3445; border-radius: 3px; }
+
+    .section {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 13px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 600;
+      gap: 8px;
+    }
+
+    .quick-tags {
+      display: flex;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+
+    .tag-btn {
+      background: #252a38;
+      color: #cfd5e8;
+      border: 1px solid #353b4f;
+      border-radius: 4px;
+      padding: 3px 7px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .tag-btn:hover {
+      background: #333a4d;
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .tag-btn.srt-btn {
+      background: rgba(59, 130, 246, 0.16);
+      border-color: rgba(59, 130, 246, 0.45);
+      color: #93c5fd;
+      font-weight: 600;
+    }
+
+    .tag-btn.srt-btn:hover {
+      background: rgba(59, 130, 246, 0.3);
+      color: #fff;
+    }
+
+    .tag-btn.magic-btn {
+      background: rgba(139, 92, 246, 0.18);
+      border-color: rgba(139, 92, 246, 0.5);
+      color: #c4b5fd;
+      font-weight: 600;
+    }
+
+    .tag-btn.magic-btn:hover {
+      background: rgba(139, 92, 246, 0.32);
+      color: #fff;
+    }
+
+    textarea#scriptInput {
+      width: 100%;
+      height: 215px;
+      background: var(--bg-input);
+      color: #eef1f8;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      font-family: "JetBrains Mono", "Fira Code", "Consolas", "Microsoft YaHei", monospace;
+      font-size: 12.5px;
+      line-height: 1.65;
+      resize: vertical;
+      outline: none;
+      user-select: text;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    textarea#scriptInput:focus { border-color: var(--border-focus); }
+    textarea#scriptInput.dragover {
+      border-color: var(--blue);
+      background: rgba(59, 130, 246, 0.08);
+    }
+
+    .opt-banner {
+      display: none;
+      font-size: 11px;
+      color: #6ee7b7;
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      border-radius: 5px;
+      padding: 6px 9px;
+      line-height: 1.4;
+    }
+
+    .opt-banner.visible { display: block; }
+
+    .syntax-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .syntax-hint code {
+      background: #252936;
+      color: #ff7b89;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-family: monospace;
+    }
+
+    .control-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .control-row {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .control-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .control-label span.val {
+      color: var(--text-main);
+      font-family: monospace;
+    }
+
+    .color-picker-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 8px;
+    }
+
+    input[type="color"] {
+      -webkit-appearance: none;
+      border: none;
+      width: 24px;
+      height: 22px;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    input[type="color"]::-webkit-color-swatch {
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 4px;
+    }
+
+    .color-hex { font-size: 12px; font-family: monospace; }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 3px;
+      gap: 3px;
+    }
+
+    .segmented.cols-2 { grid-template-columns: repeat(2, 1fr); }
+
+    .seg-btn {
+      background: transparent;
+      color: var(--text-muted);
+      border: none;
+      border-radius: 4px;
+      padding: 6px 4px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-weight: 500;
+    }
+
+    .seg-btn.active {
+      background: #2b3042;
+      color: #fff;
+      font-weight: 600;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 5px;
+      background: #2a2f40;
+      border-radius: 99px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      border: 2px solid #fff;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+    }
+
+    .audio-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-input);
+      border: 1px dashed #383e54;
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+
+    .audio-info {
+      flex: 1;
+      font-size: 12px;
+      color: var(--text-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .audio-info.loaded { color: var(--green); }
+
+    .btn-sm {
+      background: #282d3d;
+      color: #fff;
+      border: 1px solid #3a4056;
+      border-radius: 5px;
+      padding: 5px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .btn-sm:hover { background: #353b50; }
+
+    .btn-danger {
+      background: rgba(255, 46, 77, 0.15);
+      border-color: rgba(255, 46, 77, 0.4);
+      color: #ff6b81;
+    }
+
+    .export-tip {
+      font-size: 11px;
+      color: #a6b0cf;
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid rgba(59, 130, 246, 0.28);
+      border-radius: 6px;
+      padding: 8px 10px;
+      line-height: 1.5;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #ff1e3c, #ff4757);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: transform 0.1s, opacity 0.15s;
+    }
+
+    .btn-primary:hover:not(:disabled) { opacity: 0.92; }
+    .btn-primary:active:not(:disabled) { transform: scale(0.98); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .workspace {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: radial-gradient(circle at center, #181b24 0%, #0d0e12 100%);
+    }
+
+    .stage-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      min-height: 0;
+    }
+
+    .canvas-frame {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      max-width: 100%;
+      max-height: 100%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08);
+      border-radius: 6px;
+      overflow: hidden;
+      background: #000;
+    }
+
+    .canvas-frame.checkerboard {
+      background-color: #20232c;
+      background-image:
+        linear-gradient(45deg, #2d313e 25%, transparent 25%),
+        linear-gradient(-45deg, #2d313e 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #2d313e 75%),
+        linear-gradient(-45deg, transparent 75%, #2d313e 75%);
+      background-size: 24px 24px;
+      background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+    }
+
+    canvas#previewCanvas {
+      display: block;
+      max-width: 100%;
+      max-height: calc(100vh - 180px);
+      width: auto;
+      height: auto;
+    }
+
+    .transport {
+      height: 78px;
+      background: var(--bg-panel);
+      border-top: 1px solid var(--border);
+      padding: 10px 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .timeline-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .timecode {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+      color: var(--text-muted);
+      min-width: 112px;
+    }
+
+    .timecode b { color: var(--text-main); }
+
+    .controls-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .transport-btns { display: flex; align-items: center; gap: 8px; }
+
+    .icon-btn {
+      background: var(--bg-card);
+      color: var(--text-main);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      height: 32px;
+      padding: 0 14px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s;
+    }
+
+    .icon-btn:hover { background: #282d3d; border-color: #454c66; }
+    .icon-btn.playing { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    .hud-info { font-size: 12px; color: var(--text-muted); font-family: monospace; }
+
+    .export-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(8, 9, 13, 0.82);
+      backdrop-filter: blur(6px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .export-overlay.visible { display: flex; }
+
+    .export-modal {
+      width: 420px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.7);
+    }
+
+    .export-title {
+      font-size: 16px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 10px;
+      background: #232736;
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #ff1e3c, #ff6b6b);
+      transition: width 0.08s linear;
+    }
+
+    .export-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span>旋转堆叠动态字幕</span>
+    <span class="brand-badge">KINETIC v4</span>
+  </div>
+  <div class="header-actions">
+    <div class="status-pill">
+      <span class="status-dot"></span>
+      <span id="encoderStatusText">检测编码器...</span>
+    </div>
+    <button class="btn-primary" id="headerExportBtn" style="padding: 7px 14px; font-size: 12px;">
+      导出视频
+    </button>
+  </div>
+</header>
+
+<main>
+  <aside class="sidebar">
+    <!-- 文案与智能 SRT 导入 -->
+    <div class="section">
+      <div class="section-header">
+        <span>字幕脚本 / SRT</span>
+        <div class="quick-tags">
+          <input type="file" id="srtInput" accept=".srt,text/plain" style="display:none;" />
+          <button class="tag-btn srt-btn" id="importSrtBtn">导入 SRT</button>
+          <button class="tag-btn magic-btn" id="smartOptimizeBtn" title="智能拆行（保护英文与数字）、提取重点词放大高亮并插入旋转转场">智能优化</button>
+          <button class="tag-btn" data-insert="*重点*">*高亮*</button>
+          <button class="tag-btn" data-insert="[左转] ">[左转]</button>
+          <button class="tag-btn" data-insert="[右转] ">[右转]</button>
+          <button class="tag-btn" id="resetDemoBtn">重置</button>
+        </div>
+      </div>
+      <textarea id="scriptInput" spellcheck="false" placeholder="输入文案，或直接将 .srt 字幕文件拖入此处..."></textarea>
+      <div class="opt-banner" id="optBanner"></div>
+      <div class="syntax-hint">
+        拖入 <code>.srt</code> 自动拆短句（英文单词/数字不折行且绝不超屏）、精准提取 <code>*重点词*</code> 放大高亮并按节奏加 <code>[左转]</code>/<code>[右转]</code>。
+      </div>
+    </div>
+
+    <!-- 画面与背景 -->
+    <div class="section">
+      <div class="section-header"><span>画布与色彩</span></div>
+
+      <div class="control-row">
+        <div class="control-label"><span>画幅分辨率</span></div>
+        <div class="segmented cols-2" id="resGroup">
+          <button class="seg-btn active" data-res="1080x1920">竖屏 9:16 (1080×1920)</button>
+          <button class="seg-btn" data-res="1920x1080">横屏 16:9 (1920×1080)</button>
+        </div>
+      </div>
+
+      <div class="control-row">
+        <div class="control-label"><span>背景模式</span></div>
+        <div class="segmented" id="bgGroup">
+          <button class="seg-btn active" data-bg="black">纯黑 #000</button>
+          <button class="seg-btn" data-bg="green">绿幕 #0F0</button>
+          <button class="seg-btn" data-bg="transparent">透明 Alpha</button>
+        </div>
+      </div>
+
+      <div class="control-grid">
+        <div class="control-row">
+          <div class="control-label"><span>主文字颜色</span></div>
+          <div class="color-picker-wrap">
+            <input type="color" id="mainColor" value="#FFFFFF" />
+            <span class="color-hex" id="mainColorHex">#FFFFFF</span>
+          </div>
+        </div>
+        <div class="control-row">
+          <div class="control-label"><span>高亮词颜色</span></div>
+          <div class="color-picker-wrap">
+            <input type="color" id="accentColor" value="#FF1E1E" />
+            <span class="color-hex" id="accentColorHex">#FF1E1E</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 运镜与物理参数 -->
+    <div class="section">
+      <div class="section-header">
+        <span>运镜与偶发动效</span>
+        <button class="tag-btn" id="rerollFxBtn" title="重新随机分配每行的偶发特效">换一批随机动效</button>
+      </div>
+
+      <div class="control-row">
+        <div class="control-label">
+          <span>偶发特效丰富度 (重击/甩入/弹簧)</span>
+          <span class="val" id="varietyVal">80%</span>
+        </div>
+        <input type="range" id="varietyRange" min="0" max="100" step="10" value="80" />
+      </div>
+
+      <div class="control-row">
+        <div class="control-label">
+          <span>动画速度倍率</span>
+          <span class="val" id="speedVal">1.0x</span>
+        </div>
+        <input type="range" id="speedRange" min="0.5" max="2.0" step="0.1" value="1.0" />
+      </div>
+
+      <div class="control-row">
+        <div class="control-label">
+          <span>弹性过冲系数 (Spring / Back)</span>
+          <span class="val" id="bounceVal">1.8</span>
+        </div>
+        <input type="range" id="bounceRange" min="0.0" max="3.2" step="0.1" value="1.8" />
+      </div>
+
+      <div class="control-row">
+        <div class="control-label">
+          <span>自动旋转间隔 (无手动标记时)</span>
+          <span class="val" id="autoRotVal">关闭</span>
+        </div>
+        <input type="range" id="autoRotRange" min="0" max="6" step="1" value="0" />
+      </div>
+    </div>
+
+    <!-- 配音同步 -->
+    <div class="section">
+      <div class="section-header"><span>本地配音同步（可选）</span></div>
+      <div class="audio-box">
+        <div class="audio-info" id="audioInfo">未加载音频文件</div>
+        <input type="file" id="audioInput" accept="audio/*" style="display:none;" />
+        <button class="btn-sm" id="uploadAudioBtn">选择音频</button>
+        <button class="btn-sm btn-danger" id="clearAudioBtn" style="display:none;">移除</button>
+      </div>
+    </div>
+
+    <!-- 导出区域 -->
+    <div class="section">
+      <div class="section-header">
+        <span>视频导出</span>
+        <span style="font-size:11px; color:var(--text-muted);" id="exportFormatBadge">MP4 (H.264 60fps)</span>
+      </div>
+      <div class="export-tip">
+        剪映 / PR 可直接导入<b>纯黑 MP4</b> 并使用「滤色」混合模式一键去黑底；选择<b>透明背景</b>时自动导出带 Alpha 通道的 <code>.webm</code> (VP9)。
+      </div>
+      <button class="btn-primary" id="exportBtn">开始渲染并导出 MP4</button>
+    </div>
+  </aside>
+
+  <!-- 右侧实时预览区 -->
+  <section class="workspace">
+    <div class="stage-container">
+      <div class="canvas-frame" id="canvasFrame">
+        <canvas id="previewCanvas" width="1080" height="1920"></canvas>
+      </div>
+    </div>
+
+    <div class="transport">
+      <div class="timeline-row">
+        <span class="timecode"><b id="curTimeText">00:00.00</b> / <span id="totalTimeText">00:00.00</span></span>
+        <input type="range" id="scrubber" min="0" max="1000" value="0" step="1" />
+      </div>
+      <div class="controls-row">
+        <div class="transport-btns">
+          <button class="icon-btn" id="playPauseBtn">▶ 播放</button>
+          <button class="icon-btn" id="replayBtn">↺ 重播</button>
+        </div>
+        <div class="hud-info" id="hudInfo">1080×1920 · 60 FPS · 0 行字幕</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="export-overlay" id="exportOverlay">
+  <div class="export-modal">
+    <div class="export-title">
+      <span id="exportModalTitle">正在渲染视频...</span>
+      <span id="exportPercent" style="color: var(--accent); font-family: monospace;">0%</span>
+    </div>
+    <div class="progress-track">
+      <div class="progress-fill" id="exportProgressFill"></div>
+    </div>
+    <div class="export-meta">
+      <span id="exportDetailText">准备编码器...</span>
+      <span id="exportModeTag">WebCodecs</span>
+    </div>
+    <button class="btn-sm btn-danger" id="cancelExportBtn" style="align-self: flex-end; padding: 6px 14px;">
+      取消导出
+    </button>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const DEFAULT_SCRIPT = `效率直接提升 *300%* | 0.85
+英文 *WebCodecs* 不折行 | 0.95
+长词绝不超出屏幕 | 0.95
+[右转] 拖入 *SRT* 文件 | 0.8
+自动提取 *核心* 词汇 | 0.95
+重点词更大更醒目 | 1.0
+[左转] 节奏停顿点 | 0.85
+自动 *90°* 旋转转场 | 0.95
+搭配 *重击* 与弹簧 | 1.0
+[右转] 一键导出 | 0.75
+*60fps* 标准 MP4 | 1.5`;
+
+  const HIGHLIGHT_SIZE_BOOST = 1.22; // 混合行内重点词放大倍率
+
+  const state = {
+    width: 1080,
+    height: 1920,
+    fps: 60,
+    bgMode: 'black',
+    mainColor: '#FFFFFF',
+    accentColor: '#FF1E1E',
+    speed: 1.0,
+    bounce: 1.8,
+    variety: 0.8,
+    fxSeed: 42,
+    autoRotateEvery: 0,
+
+    items: [],
+    groups: [],
+    totalDuration: 1.0,
+
+    isPlaying: false,
+    currentTime: 0,
+    lastRafTime: 0,
+
+    audioCtx: null,
+    audioBuffer: null,
+    audioSource: null,
+
+    isExporting: false,
+    cancelExport: false,
+  };
+
+  const dom = {
+    scriptInput: document.getElementById('scriptInput'),
+    srtInput: document.getElementById('srtInput'),
+    importSrtBtn: document.getElementById('importSrtBtn'),
+    smartOptimizeBtn: document.getElementById('smartOptimizeBtn'),
+    optBanner: document.getElementById('optBanner'),
+    resGroup: document.getElementById('resGroup'),
+    bgGroup: document.getElementById('bgGroup'),
+    mainColor: document.getElementById('mainColor'),
+    mainColorHex: document.getElementById('mainColorHex'),
+    accentColor: document.getElementById('accentColor'),
+    accentColorHex: document.getElementById('accentColorHex'),
+    varietyRange: document.getElementById('varietyRange'),
+    varietyVal: document.getElementById('varietyVal'),
+    rerollFxBtn: document.getElementById('rerollFxBtn'),
+    speedRange: document.getElementById('speedRange'),
+    speedVal: document.getElementById('speedVal'),
+    bounceRange: document.getElementById('bounceRange'),
+    bounceVal: document.getElementById('bounceVal'),
+    autoRotRange: document.getElementById('autoRotRange'),
+    autoRotVal: document.getElementById('autoRotVal'),
+    audioInput: document.getElementById('audioInput'),
+    audioInfo: document.getElementById('audioInfo'),
+    uploadAudioBtn: document.getElementById('uploadAudioBtn'),
+    clearAudioBtn: document.getElementById('clearAudioBtn'),
+    canvasFrame: document.getElementById('canvasFrame'),
+    canvas: document.getElementById('previewCanvas'),
+    playPauseBtn: document.getElementById('playPauseBtn'),
+    replayBtn: document.getElementById('replayBtn'),
+    scrubber: document.getElementById('scrubber'),
+    curTimeText: document.getElementById('curTimeText'),
+    totalTimeText: document.getElementById('totalTimeText'),
+    hudInfo: document.getElementById('hudInfo'),
+    exportBtn: document.getElementById('exportBtn'),
+    headerExportBtn: document.getElementById('headerExportBtn'),
+    exportFormatBadge: document.getElementById('exportFormatBadge'),
+    encoderStatusText: document.getElementById('encoderStatusText'),
+    resetDemoBtn: document.getElementById('resetDemoBtn'),
+    exportOverlay: document.getElementById('exportOverlay'),
+    exportModalTitle: document.getElementById('exportModalTitle'),
+    exportPercent: document.getElementById('exportPercent'),
+    exportProgressFill: document.getElementById('exportProgressFill'),
+    exportDetailText: document.getElementById('exportDetailText'),
+    exportModeTag: document.getElementById('exportModeTag'),
+    cancelExportBtn: document.getElementById('cancelExportBtn'),
+  };
+
+  const ctx = dom.canvas.getContext('2d');
+  const measureCanvas = document.createElement('canvas');
+  const measureCtx = measureCanvas.getContext('2d');
+  const FONT_STACK = '"Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", "Heiti SC", sans-serif';
+
+  // ==================== 数学与物理缓动 ====================
+  function clamp(v, min, max) { return v < min ? min : v > max ? max : v; }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  function seededRand(seed) {
+    const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+    return x - Math.floor(x);
+  }
+
+  function easeOutBack(t, overshoot = 1.7) {
+    const c1 = overshoot;
+    const c3 = c1 + 1;
+    const x = clamp(t, 0, 1);
+    return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+  }
+
+  function easeOutQuint(t) {
+    const x = clamp(t, 0, 1);
+    return 1 - Math.pow(1 - x, 5);
+  }
+
+  function easeOutExpo(t) {
+    const x = clamp(t, 0, 1);
+    return x === 1 ? 1 : 1 - Math.pow(2, -10 * x);
+  }
+
+  function springEase(t, bounce = 1.8) {
+    const x = clamp(t, 0, 1);
+    if (x === 0 || x === 1) return x;
+    const damping = clamp(9.5 - bounce * 1.9, 3.2, 10.0);
+    const freq = 9.0 + bounce * 3.5;
+    return 1 - Math.exp(-damping * x) * Math.cos(freq * x);
+  }
+
+  function formatTime(sec) {
+    const s = Math.max(0, sec);
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${String(m).padStart(2, '0')}:${r.toFixed(2).padStart(5, '0')}`;
+  }
+
+  function parseSrtTimeToSec(str) {
+    const cleaned = str.trim().replace(',', '.');
+    const parts = cleaned.split(':').map(Number);
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    return parseFloat(cleaned) || 0;
+  }
+
+  // ==================== 智能 SRT / 原子分词与重点词提取引擎 ====================
+  // 按长词优先排序，确保优先匹配更有信息量的复合词
+  const EMPHASIS_WORDS = [
+    '底层逻辑', '降维打击', '核心竞争力', '指数级', '天花板', '生产力', '认知差',
+    '千万', '一定', '绝对', '爆款', '核心', '关键', '真相', '免费', '直接', '彻底',
+    '震惊', '必须', '最强', '唯一', '立刻', '马上', '终于', '竟然', '居然', '重点',
+    '注意', '搞定', '翻倍', '拉满', '炸裂', '秘诀', '底层', '逻辑', '效率', '逆袭',
+    '颠覆', '必看', '警告', '秘密', '技巧', '方法', '结果', '本质', '致命', '惊人',
+    '痛点', '突破', '暴涨', '免费', '绝招', '神器', '终极', '重磅', '颠覆'
+  ];
+
+  // 英文常见虚词，避免被误判为重点词
+  const EN_STOP_WORDS = new Set([
+    'the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'her', 'was',
+    'one', 'our', 'out', 'has', 'his', 'how', 'its', 'may', 'new', 'now', 'old', 'see',
+    'two', 'way', 'who', 'did', 'get', 'let', 'put', 'say', 'she', 'too', 'use', 'that',
+    'with', 'this', 'from', 'they', 'will', 'have', 'what', 'when', 'make', 'like', 'just',
+    'know', 'take', 'into', 'your', 'some', 'them', 'than', 'then', 'look', 'only', 'come',
+    'over', 'also', 'back', 'after', 'very', 'well', 'even', 'want', 'give', 'most', 'is',
+    'to', 'in', 'it', 'of', 'on', 'at', 'by', 'as', 'or', 'an', 'be', 'do', 'if', 'so', 'up'
+  ]);
+
+  function visualLength(str) {
+    let len = 0;
+    for (const ch of str) {
+      if (/\s/.test(ch)) len += 0.3;
+      else if (/[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]/.test(ch)) len += 1.0;
+      else len += 0.56;
+    }
+    return len;
+  }
+
+  /**
+   * 原子化分词：将英文单词、连续数字（含小数/百分号/常见单位）保持为不可分割的整体
+   */
+  function tokenizeAtomic(text) {
+    const regex = /([A-Za-z0-9]+(?:[.'%+\-_\/°][A-Za-z0-9]+)*[%°]?(?:fps|FPS|px|GB|MB|KB|TB|元|块|万|亿|倍|秒|年|天)?|\s+|.)/gu;
+    const tokens = [];
+    let m;
+    while ((m = regex.exec(text)) !== null) {
+      tokens.push(m[0]);
+    }
+    return tokens;
+  }
+
+  /**
+   * 将单句长文本按标点和原子 Token 拆分为短句，绝不拆分英文单词或数字
+   */
+  function smartSplitPhrase(rawText, maxVisLen) {
+    const clean = rawText.replace(/\s+/g, ' ').trim();
+    if (!clean) return [];
+
+    // 1. 先按标点切分，保留感叹号和问号在句尾
+    const roughParts = [];
+    const segs = clean.split(/([，。！？；：,.;!?…—]+)/);
+    let buf = '';
+    for (const tk of segs) {
+      if (!tk) continue;
+      if (/^[！？!?]+$/.test(tk)) {
+        buf += tk;
+        if (buf.trim()) roughParts.push(buf.trim());
+        buf = '';
+      } else if (/^[，。；：,.;…—]+$/.test(tk)) {
+        if (buf.trim()) roughParts.push(buf.trim());
+        buf = '';
+      } else {
+        buf += tk;
+      }
+    }
+    if (buf.trim()) roughParts.push(buf.trim());
+
+    // 2. 对过长分句基于原子 Token 进行平衡切分
+    const finalChunks = [];
+    const softBreaks = new Set(['的', '了', '就', '但', '而', '让', '把', '被', '给', '是', '在', '和', '与', '去', '来', '能', '会', '要', '都', '才', '也']);
+
+    for (const part of roughParts) {
+      if (visualLength(part) <= maxVisLen) {
+        finalChunks.push(part);
+        continue;
+      }
+
+      const tokens = tokenizeAtomic(part);
+      const totalVis = visualLength(part);
+      const targetLines = Math.max(2, Math.ceil(totalVis / maxVisLen));
+      const idealLineVis = totalVis / targetLines;
+
+      let curLine = '';
+      let curVis = 0;
+
+      for (let i = 0; i < tokens.length; i++) {
+        const tk = tokens[i];
+        const tkVis = visualLength(tk);
+
+        // 跳过行首多余空格
+        if (!curLine && /^\s+$/.test(tk)) continue;
+
+        // 如果当前行已有内容，且加上该原子 Token 会超出上限，则在此处换行
+        // 注意：绝不把英文单词或数字拆开；若单个 Token 本身超长，则单独占一行（后续渲染会自动缩放防溢出）
+        if (curLine && (curVis + tkVis > maxVisLen)) {
+          finalChunks.push(curLine.trim());
+          curLine = /^\s+$/.test(tk) ? '' : tk;
+          curVis = /^\s+$/.test(tk) ? 0 : tkVis;
+          continue;
+        }
+
+        curLine += tk;
+        curVis += tkVis;
+
+        // 达到理想均分长度附近，遇到中文助词或空格时提前自然断行，避免最后一行只剩 1 个字
+        const remainingVis = totalVis - (finalChunks.reduce((s, c) => s + visualLength(c), 0) + curVis);
+        if (
+          curVis >= idealLineVis * 0.85 &&
+          remainingVis >= 1.8 &&
+          (softBreaks.has(tk) || /^\s+$/.test(tk))
+        ) {
+          finalChunks.push(curLine.trim());
+          curLine = '';
+          curVis = 0;
+        }
+      }
+
+      if (curLine.trim()) {
+        finalChunks.push(curLine.trim());
+      }
+    }
+
+    return finalChunks.filter(Boolean);
+  }
+
+  /**
+   * 精准重点词提取（不随机高亮）：
+   * 仅突出有明确信息权重或强调意义的词汇（数据/引号词/英文专有名词/核心语义词）
+   */
+  function autoHighlightKeyTerm(text) {
+    if (text.includes('*')) return { text, highlighted: true };
+
+    // 1. 数据、百分比、倍数、温度/角度、金额、帧率等硬核指标
+    const numRegex = /(\d+(?:\.\d+)?(?:[%°]|倍|万|亿|元|块|秒|分钟|小时|天|年|fps|FPS|px|GB|MB|KB|TB|K|k|W|w)?)/;
+    if (numRegex.test(text)) {
+      return { text: text.replace(numRegex, '*$1*'), highlighted: true };
+    }
+
+    // 2. 引号或书名号内的专有名词/核心概念
+    const quoteRegex = /[“「《"]([^”」》"]{1,10})[”」》"]/;
+    if (quoteRegex.test(text)) {
+      return { text: text.replace(quoteRegex, '*$1*'), highlighted: true };
+    }
+
+    // 3. 英文技术词 / 品牌名 / 缩写（排除常见虚词，长度 >= 2）
+    const enMatches = text.match(/[A-Za-z][A-Za-z0-9.+-]{1,}/g);
+    if (enMatches) {
+      const keyEn = enMatches.find(w => !EN_STOP_WORDS.has(w.toLowerCase()));
+      if (keyEn) {
+        const escaped = keyEn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return { text: text.replace(new RegExp(escaped), `*${keyEn}*`), highlighted: true };
+      }
+    }
+
+    // 4. 命中高权重语义关键词
+    for (const kw of EMPHASIS_WORDS) {
+      if (text.includes(kw)) {
+        return { text: text.replace(kw, `*${kw}*`), highlighted: true };
+      }
+    }
+
+    // 未命中明确重点词则保持纯白，不做随机高亮
+    return { text, highlighted: false };
+  }
+
+  function buildOptimalKineticScript(rawEntries) {
+    const isPortrait = state.height > state.width;
+    const maxVisLen = isPortrait ? 6.8 : 9.5;
+
+    // 1. 拆句并按字重插值分配精准时间戳
+    const expanded = [];
+    for (const entry of rawEntries) {
+      const chunks = smartSplitPhrase(entry.text, maxVisLen);
+      if (!chunks.length) continue;
+
+      if (entry.hasTime && entry.end > entry.start) {
+        const totalDur = entry.end - entry.start;
+        const weights = chunks.map(c => Math.max(visualLength(c), 1.5));
+        const sumW = weights.reduce((a, b) => a + b, 0);
+        let cursor = entry.start;
+
+        chunks.forEach((c, idx) => {
+          const dur = (weights[idx] / sumW) * totalDur;
+          const end = idx === chunks.length - 1 ? entry.end : cursor + dur;
+          expanded.push({
+            text: c,
+            start: cursor,
+            end: Math.max(cursor + 0.18, end),
+            hasTime: true,
+            endedSentence: /[！？。!?]$/.test(c),
+          });
+          cursor = end;
+        });
+      } else {
+        chunks.forEach((c) => {
+          const dur = clamp(0.42 + visualLength(c) * 0.12, 0.55, 1.8);
+          expanded.push({
+            text: c,
+            duration: dur,
+            hasTime: false,
+            endedSentence: /[！？。!?]$/.test(c),
+          });
+        });
+      }
+    }
+
+    // 2. 节奏感知旋转 + 精准重点词高亮
+    const outLines = [];
+    let linesInGroup = 0;
+    let rotDir = 1;
+    let rotCount = 0;
+    let hlCount = 0;
+
+    expanded.forEach((item, i) => {
+      let prefixRot = '';
+      if (i > 0) {
+        const prev = expanded[i - 1];
+        const gap = (item.hasTime && prev.hasTime) ? (item.start - prev.end) : 0;
+
+        const shouldRotate =
+          (gap >= 0.38 && linesInGroup >= 2) ||
+          (prev.endedSentence && linesInGroup >= 3) ||
+          (linesInGroup >= 4);
+
+        if (shouldRotate) {
+          prefixRot = rotDir > 0 ? '[右转] ' : '[左转] ';
+          rotDir *= -1;
+          linesInGroup = 0;
+          rotCount++;
+        }
+      }
+
+      const hl = autoHighlightKeyTerm(item.text);
+      if (hl.highlighted) hlCount++;
+
+      linesInGroup++;
+
+      if (item.hasTime) {
+        outLines.push(`[${formatTime(item.start)} -> ${formatTime(item.end)}] ${prefixRot}${hl.text}`);
+      } else {
+        outLines.push(`${prefixRot}${hl.text} | ${item.duration.toFixed(2)}`);
+      }
+    });
+
+    return {
+      script: outLines.join('\n'),
+      stats: { totalLines: expanded.length, rotCount, hlCount },
+    };
+  }
+
+  function parseRawSrtEntries(srtText) {
+    const normalized = srtText.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const blocks = normalized.split(/\n{2,}/);
+    const entries = [];
+
+    for (const block of blocks) {
+      const rows = block.trim().split('\n').map(r => r.trim()).filter(Boolean);
+      if (rows.length < 2) continue;
+      const timeIdx = rows.findIndex(r => r.includes('-->'));
+      if (timeIdx === -1) continue;
+
+      const [rawStart, rawEnd] = rows[timeIdx].split('-->');
+      const start = parseSrtTimeToSec(rawStart);
+      const end = parseSrtTimeToSec(rawEnd);
+      const text = rows.slice(timeIdx + 1).join(' ').replace(/<[^>]+>/g, '').trim();
+      if (!text) continue;
+
+      entries.push({ start, end, text, hasTime: true });
+    }
+    return entries;
+  }
+
+  function showOptBanner(msg) {
+    dom.optBanner.textContent = msg;
+    dom.optBanner.classList.add('visible');
+  }
+
+  function handleSrtFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const entries = parseRawSrtEntries(String(e.target.result || ''));
+      if (!entries.length) {
+        alert('未在文件中识别到有效的 SRT 字幕内容。');
+        return;
+      }
+      const { script, stats } = buildOptimalKineticScript(entries);
+      dom.scriptInput.value = script;
+      state.autoRotateEvery = 0;
+      dom.autoRotRange.value = '0';
+      dom.autoRotVal.textContent = '关闭';
+      state.currentTime = 0;
+      showOptBanner(`智能优化完成：原 ${entries.length} 条 → ${stats.totalLines} 行 · ${stats.rotCount} 次旋转 · ${stats.hlCount} 处重点词放大高亮`);
+      rebuildScene();
+      setPlaying(true);
+    };
+    reader.readAsText(file, 'utf-8');
+  }
+
+  function optimizeCurrentScript() {
+    const rawText = dom.scriptInput.value.trim();
+    if (!rawText) return;
+
+    if (rawText.includes('-->') && /\d{2}:\d{2}:\d{2}[,.]\d{3}/.test(rawText)) {
+      const entries = parseRawSrtEntries(rawText);
+      if (entries.length) {
+        const { script, stats } = buildOptimalKineticScript(entries);
+        dom.scriptInput.value = script;
+        state.autoRotateEvery = 0;
+        dom.autoRotRange.value = '0';
+        dom.autoRotVal.textContent = '关闭';
+        showOptBanner(`智能优化 SRT：${stats.totalLines} 行 · ${stats.rotCount} 次转场 · ${stats.hlCount} 处重点词`);
+        state.currentTime = 0;
+        rebuildScene();
+        setPlaying(true);
+        return;
+      }
+    }
+
+    const lines = rawText.split(/\r?\n/);
+    const entries = [];
+    for (const raw of lines) {
+      let line = raw.trim();
+      if (!line || line.startsWith('//')) continue;
+
+      let start = 0, end = 0, hasTime = false;
+      const srtPrefix = line.match(/^\[([^\]]+?)\s*(?:->|-->)\s*([^\]]+?)\]\s*(.*)$/);
+      if (srtPrefix) {
+        start = parseSrtTimeToSec(srtPrefix[1]);
+        end = parseSrtTimeToSec(srtPrefix[2]);
+        hasTime = end > start;
+        line = srtPrefix[3].trim();
+      }
+      const pipeIdx = line.lastIndexOf('|');
+      if (pipeIdx !== -1 && !isNaN(parseFloat(line.slice(pipeIdx + 1)))) {
+        line = line.slice(0, pipeIdx).trim();
+      }
+      line = line.replace(/\[(左转|右转|旋转)\]/g, '').replace(/\*/g, '').trim();
+      if (line) entries.push({ start, end, text: line, hasTime });
+    }
+
+    if (!entries.length) return;
+    const { script, stats } = buildOptimalKineticScript(entries);
+    dom.scriptInput.value = script;
+    state.autoRotateEvery = 0;
+    dom.autoRotRange.value = '0';
+    dom.autoRotVal.textContent = '关闭';
+    showOptBanner(`已一键重排：${stats.totalLines} 行 · ${stats.rotCount} 次转场 · ${stats.hlCount} 处重点词`);
+    state.currentTime = 0;
+    rebuildScene();
+    setPlaying(true);
+  }
+
+  // ==================== 2D 世界坐标布局引擎（含行内放大与绝对防溢出） ====================
+  function parseSegments(rawText) {
+    const segments = [];
+    const regex = /\*([^*]+)\*/g;
+    let lastIndex = 0;
+    let match;
+    while ((match = regex.exec(rawText)) !== null) {
+      if (match.index > lastIndex) {
+        segments.push({ text: rawText.slice(lastIndex, match.index), highlight: false });
+      }
+      segments.push({ text: match[1], highlight: true });
+      lastIndex = regex.lastIndex;
+    }
+    if (lastIndex < rawText.length) {
+      segments.push({ text: rawText.slice(lastIndex), highlight: false });
+    }
+    return segments.length ? segments : [{ text: rawText, highlight: false }];
+  }
+
+  function hasMixedHighlight(segments) {
+    const hasHl = segments.some(s => s.highlight);
+    const hasNormal = segments.some(s => !s.highlight && s.text.trim().length > 0);
+    return hasHl && hasNormal;
+  }
+
+  function getSegmentFontSize(seg, baseFontSize, isMixed) {
+    return (seg.highlight && isMixed) ? baseFontSize * HIGHLIGHT_SIZE_BOOST : baseFontSize;
+  }
+
+  function measureLineWidth(segments, baseFontSize) {
+    const isMixed = hasMixedHighlight(segments);
+    let total = 0;
+    for (const seg of segments) {
+      const sz = getSegmentFontSize(seg, baseFontSize, isMixed);
+      measureCtx.font = `900 ${sz}px ${FONT_STACK}`;
+      total += measureCtx.measureText(seg.text).width;
+    }
+    return total;
+  }
+
+  function assignEffectType(index, hasHighlight, textLen, isGroupStart) {
+    if (state.variety <= 0.01) return 'pop';
+    const r = seededRand((index + 1) * 97 + state.fxSeed * 31 + textLen * 7);
+    if (r > state.variety) return 'pop';
+
+    const r2 = seededRand((index + 1) * 193 + state.fxSeed * 17);
+    if (hasHighlight && textLen <= 6 && r2 < 0.55) return 'slam';
+    if (isGroupStart && r2 < 0.5) return 'whipRight';
+
+    const pool = ['slam', 'whipLeft', 'whipRight', 'springDrop', 'elasticStretch', 'pop'];
+    return pool[Math.floor(r2 * pool.length) % pool.length];
+  }
+
+  function rebuildScene() {
+    const rawLines = dom.scriptInput.value.split(/\r?\n/);
+    const parsedEntries = [];
+    let pendingRotate = 0;
+    let autoAltDir = 1;
+
+    for (const raw of rawLines) {
+      let line = raw.trim();
+      if (!line || line.startsWith('//')) continue;
+
+      let explicitStart = null;
+      let explicitEnd = null;
+      const srtPrefix = line.match(/^\[([^\]]+?)\s*(?:->|-->)\s*([^\]]+?)\]\s*(.*)$/);
+      if (srtPrefix) {
+        explicitStart = parseSrtTimeToSec(srtPrefix[1]);
+        explicitEnd = parseSrtTimeToSec(srtPrefix[2]);
+        line = srtPrefix[3].trim();
+      }
+
+      let customDuration = null;
+      const pipeIdx = line.lastIndexOf('|');
+      if (pipeIdx !== -1) {
+        const durCandidate = parseFloat(line.slice(pipeIdx + 1).trim());
+        if (!isNaN(durCandidate) && durCandidate > 0.1) {
+          customDuration = durCandidate;
+          line = line.slice(0, pipeIdx).trim();
+        }
+      }
+
+      let rotCmd = 0;
+      if (/\[左转\]/.test(line)) {
+        rotCmd = -1;
+        line = line.replace(/\[左转\]/g, '').trim();
+      } else if (/\[右转\]/.test(line)) {
+        rotCmd = 1;
+        line = line.replace(/\[右转\]/g, '').trim();
+      } else if (/\[旋转\]/.test(line)) {
+        rotCmd = autoAltDir;
+        autoAltDir *= -1;
+        line = line.replace(/\[旋转\]/g, '').trim();
+      }
+
+      if (!line) {
+        if (rotCmd !== 0) pendingRotate = rotCmd;
+        continue;
+      }
+
+      const finalRotate = rotCmd !== 0 ? rotCmd : pendingRotate;
+      pendingRotate = 0;
+
+      const segments = parseSegments(line);
+      const plainText = segments.map(s => s.text).join('');
+      const hasHighlight = segments.some(s => s.highlight);
+
+      let duration;
+      if (explicitStart !== null && explicitEnd !== null && explicitEnd > explicitStart) {
+        duration = explicitEnd - explicitStart;
+      } else if (customDuration !== null) {
+        duration = customDuration;
+      } else {
+        duration = clamp(0.45 + plainText.length * 0.11, 0.65, 2.2);
+      }
+
+      parsedEntries.push({
+        plainText, segments, hasHighlight, duration,
+        explicitStart, explicitEnd, rotateDir: finalRotate,
+      });
+    }
+
+    if (!parsedEntries.length) {
+      state.items = [];
+      state.groups = [];
+      state.totalDuration = 1.0;
+      updateTimelineUI();
+      renderFrame(ctx, state.width, state.height, 0);
+      return;
+    }
+
+    const isPortrait = state.height > state.width;
+    const targetBlockWidth = isPortrait ? state.width * 0.78 : state.width * 0.56;
+    const maxSafeWidth = state.width * 0.86; // 绝对不超屏安全宽度（预留缩放与投影余量）
+    const maxFontSize = isPortrait ? 225 : 205;
+    const minFontSize = isPortrait ? 54 : 52;
+    const lineGapRatio = 0.16;
+    const groupGap = isPortrait ? 58 : 66;
+
+    const groups = [];
+    let currentGroup = {
+      id: 0, angle: 0, rotateFromPrev: 0, lines: [],
+      width: 0, height: 0, originX: 0, originY: 0,
+    };
+
+    let linesSinceRot = 0;
+    let curAngle = 0;
+
+    parsedEntries.forEach((entry, idx) => {
+      let rotDir = entry.rotateDir;
+      if (idx > 0 && rotDir === 0 && state.autoRotateEvery > 0 && linesSinceRot >= state.autoRotateEvery) {
+        rotDir = autoAltDir;
+        autoAltDir *= -1;
+      }
+
+      if (idx > 0 && rotDir !== 0) {
+        groups.push(currentGroup);
+        curAngle += rotDir * (Math.PI / 2);
+        currentGroup = {
+          id: groups.length, angle: curAngle, rotateFromPrev: rotDir, lines: [],
+          width: 0, height: 0, originX: 0, originY: 0,
+        };
+        linesSinceRot = 0;
+      }
+
+      const refSize = 100;
+      const refW = Math.max(measureLineWidth(entry.segments, refSize), 1);
+      let idealFontSize = clamp((targetBlockWidth / refW) * refSize, minFontSize, maxFontSize);
+      let actualWidth = measureLineWidth(entry.segments, idealFontSize);
+
+      // 最高优先级防溢出保护：若行宽超过安全边界（例如超长英文单词），无条件等比缩小
+      if (actualWidth > maxSafeWidth) {
+        idealFontSize = Math.max(18, idealFontSize * (maxSafeWidth / actualWidth));
+        actualWidth = measureLineWidth(entry.segments, idealFontSize);
+      }
+
+      const isMixed = hasMixedHighlight(entry.segments);
+      const effectiveMaxFont = isMixed ? idealFontSize * HIGHLIGHT_SIZE_BOOST : idealFontSize;
+      const lineHeight = effectiveMaxFont * (1 + lineGapRatio);
+
+      currentGroup.lines.push({
+        ...entry, groupId: currentGroup.id, angle: curAngle,
+        fontSize: idealFontSize, isMixed, width: actualWidth, lineHeight, localY: 0,
+      });
+      linesSinceRot++;
+    });
+    groups.push(currentGroup);
+
+    for (const g of groups) {
+      let y = 0, maxW = 0;
+      for (const l of g.lines) {
+        l.localY = y + l.lineHeight * 0.5;
+        y += l.lineHeight;
+        if (l.width > maxW) maxW = l.width;
+      }
+      g.width = Math.max(maxW, targetBlockWidth * 0.65);
+      g.height = y;
+    }
+
+    for (let i = 1; i < groups.length; i++) {
+      const prev = groups[i - 1];
+      const curr = groups[i];
+      const dir = curr.rotateFromPrev;
+      const uA = dir > 0 ? (prev.width / 2) : (-prev.width / 2);
+      const vA = prev.height + groupGap + curr.width / 2;
+      const cosA = Math.cos(prev.angle);
+      const sinA = Math.sin(prev.angle);
+      curr.originX = prev.originX + uA * cosA - vA * sinA;
+      curr.originY = prev.originY + uA * sinA + vA * cosA;
+    }
+
+    const items = [];
+    let tCursor = 0.05;
+    let maxEndTime = 1.0;
+
+    for (const g of groups) {
+      const cosA = Math.cos(g.angle);
+      const sinA = Math.sin(g.angle);
+
+      g.lines.forEach((l, lineIdxInGroup) => {
+        const idx = items.length;
+        const isGroupStart = lineIdxInGroup === 0 && g.id > 0;
+        const worldX = g.originX - l.localY * sinA;
+        const worldY = g.originY + l.localY * cosA;
+
+        const camOffsetLocalY = -Math.min(l.localY * 0.28, state.height * 0.14);
+        const camOffsetLocalX = isGroupStart
+          ? (g.rotateFromPrev > 0 ? -state.width * 0.05 : state.width * 0.05)
+          : 0;
+
+        const targetLocalY = l.localY + camOffsetLocalY;
+        const camX = g.originX + camOffsetLocalX * cosA - targetLocalY * sinA;
+        const camY = g.originY + camOffsetLocalX * sinA + targetLocalY * cosA;
+
+        // 限制放大倍率，确保满宽行不会被镜头推至屏外
+        const maxSafeZoom = Math.min(1.05, (state.width * 0.92) / Math.max(l.width, 1));
+        const rawZoom = clamp(1.03 - (l.fontSize - minFontSize) / (maxFontSize - minFontSize) * 0.09, 0.92, 1.05);
+        const zoomFactor = Math.min(rawZoom, maxSafeZoom);
+
+        const startTime = l.explicitStart !== null ? l.explicitStart : tCursor;
+        const endTime = l.explicitEnd !== null ? l.explicitEnd : (startTime + l.duration);
+        tCursor = Math.max(tCursor, endTime);
+        if (endTime > maxEndTime) maxEndTime = endTime;
+
+        const fxType = assignEffectType(idx, l.hasHighlight, l.plainText.length, isGroupStart);
+
+        items.push({
+          index: idx, groupId: g.id, lineIdxInGroup, isGroupStart,
+          segments: l.segments, hasHighlight: l.hasHighlight, isMixed: l.isMixed,
+          fontSize: l.fontSize, width: l.width, lineHeight: l.lineHeight,
+          angle: g.angle, worldX, worldY, camX, camY, camAngle: g.angle, camZoom: zoomFactor,
+          startTime, duration: Math.max(0.15, endTime - startTime), endTime, fxType,
+        });
+      });
+    }
+
+    items.sort((a, b) => a.startTime - b.startTime);
+
+    state.groups = groups;
+    state.items = items;
+    state.totalDuration = Math.max(maxEndTime + 0.4, 1.0);
+    if (state.currentTime > state.totalDuration) state.currentTime = 0;
+
+    updateTimelineUI();
+    renderFrame(ctx, state.width, state.height, state.currentTime);
+  }
+
+  // ==================== 虚拟摄像机 + 偶发动效渲染 ====================
+  function computeCameraAt(time) {
+    const items = state.items;
+    if (!items.length) return { x: 0, y: 0, angle: 0, zoom: 1, activeIndex: -1, shakeX: 0, shakeY: 0 };
+
+    let activeIndex = -1;
+    for (let i = 0; i < items.length; i++) {
+      if (time >= items[i].startTime) activeIndex = i;
+      else break;
+    }
+
+    if (activeIndex === -1) {
+      const first = items[0];
+      return { x: first.camX, y: first.camY, angle: first.camAngle, zoom: first.camZoom * 0.92, activeIndex: -1, shakeX: 0, shakeY: 0 };
+    }
+
+    const curr = items[activeIndex];
+    const prev = activeIndex > 0 ? items[activeIndex - 1] : null;
+    const elapsed = Math.max(0, time - curr.startTime);
+
+    const isRotationTurn = curr.isGroupStart;
+    const camTransDur = (isRotationTurn ? 0.52 : 0.34) / state.speed;
+    const p = clamp(elapsed / camTransDur, 0, 1);
+
+    let shakeX = 0, shakeY = 0;
+    if (curr.fxType === 'slam' && elapsed < 0.28) {
+      const impactT = Math.max(0, elapsed - 0.05);
+      const decay = Math.exp(-impactT * 22) * (state.variety * 14);
+      shakeX = Math.sin(impactT * 95) * decay;
+      shakeY = Math.cos(impactT * 110) * decay;
+    }
+
+    if (!prev) {
+      const introP = easeOutExpo(clamp(elapsed / (0.45 / state.speed), 0, 1));
+      return {
+        x: curr.camX, y: curr.camY, angle: curr.camAngle,
+        zoom: lerp(curr.camZoom * 0.88, curr.camZoom, introP),
+        activeIndex, shakeX, shakeY,
+      };
+    }
+
+    const posEase = isRotationTurn ? easeOutQuint(p) : springEase(p, state.bounce * 0.45);
+    const rotEase = isRotationTurn ? easeOutBack(p, state.bounce * 0.45) : easeOutExpo(p);
+    const turnDip = isRotationTurn ? Math.sin(p * Math.PI) * 0.08 : 0;
+
+    return {
+      x: lerp(prev.camX, curr.camX, posEase),
+      y: lerp(prev.camY, curr.camY, posEase),
+      angle: lerp(prev.camAngle, curr.camAngle, rotEase),
+      zoom: lerp(prev.camZoom, curr.camZoom, easeOutExpo(p)) - turnDip,
+      activeIndex, shakeX, shakeY,
+    };
+  }
+
+  function computeLineTransform(item, elapsed) {
+    const dur = 0.42 / state.speed;
+    const t = clamp(elapsed / dur, 0, 1);
+    const b = state.bounce;
+
+    let tx = 0, ty = 0, sx = 1, sy = 1, skewX = 0, rot = 0;
+    let alpha = clamp(t * 4.0, 0, 1);
+
+    switch (item.fxType) {
+      case 'slam': {
+        const p = easeOutBack(clamp(elapsed / (0.28 / state.speed), 0, 1), b * 0.6);
+        const s = lerp(2.15, 1.0, p);
+        sx = s; sy = s;
+        rot = lerp(seededRand(item.index + 5) > 0.5 ? 0.09 : -0.09, 0, easeOutExpo(t));
+        alpha = clamp(t * 6.0, 0, 1);
+        break;
+      }
+      case 'whipLeft':
+      case 'whipRight': {
+        const dir = item.fxType === 'whipLeft' ? -1 : 1;
+        const sp = springEase(t, b);
+        tx = lerp(dir * state.width * 0.45, 0, sp);
+        skewX = lerp(-dir * 0.36, 0, sp);
+        sx = lerp(1.18, 1.0, sp);
+        break;
+      }
+      case 'springDrop': {
+        const sp = springEase(t, b * 1.1);
+        ty = lerp(-item.fontSize * 0.95, 0, sp);
+        const squash = Math.sin(clamp(t * 2.2, 0, 1) * Math.PI) * Math.exp(-t * 4.5) * 0.28;
+        sx = 1 + squash;
+        sy = 1 - squash * 0.85;
+        break;
+      }
+      case 'elasticStretch': {
+        const sp = springEase(t, b * 1.15);
+        sx = lerp(1.85, 1.0, sp);
+        sy = lerp(0.35, 1.0, sp);
+        break;
+      }
+      case 'pop':
+      default: {
+        const s = lerp(0.35, 1.0, easeOutBack(t, b));
+        sx = s; sy = s;
+        ty = lerp(item.fontSize * 0.32, 0, easeOutQuint(t));
+        break;
+      }
+    }
+    return { tx, ty, sx, sy, skewX, rot, alpha };
+  }
+
+  function renderFrame(targetCtx, width, height, time) {
+    targetCtx.save();
+    targetCtx.setTransform(1, 0, 0, 1, 0, 0);
+    targetCtx.clearRect(0, 0, width, height);
+
+    if (state.bgMode === 'black') {
+      targetCtx.fillStyle = '#000000';
+      targetCtx.fillRect(0, 0, width, height);
+    } else if (state.bgMode === 'green') {
+      targetCtx.fillStyle = '#00FF00';
+      targetCtx.fillRect(0, 0, width, height);
+    }
+
+    const items = state.items;
+    if (!items.length) { targetCtx.restore(); return; }
+
+    const cam = computeCameraAt(time);
+    if (cam.activeIndex < 0) { targetCtx.restore(); return; }
+
+    const activeGroupId = items[cam.activeIndex].groupId;
+
+    targetCtx.translate(width / 2 + cam.shakeX, height / 2 + cam.shakeY);
+    targetCtx.scale(cam.zoom, cam.zoom);
+    targetCtx.rotate(-cam.angle);
+    targetCtx.translate(-cam.x, -cam.y);
+
+    for (let i = 0; i <= cam.activeIndex; i++) {
+      const item = items[i];
+      if (time < item.startTime) continue;
+
+      const groupAge = activeGroupId - item.groupId;
+      if (groupAge > 4) continue;
+
+      let layerAlpha = 1.0;
+      if (groupAge === 1) layerAlpha = 0.48;
+      else if (groupAge === 2) layerAlpha = 0.22;
+      else if (groupAge === 3) layerAlpha = 0.1;
+      else if (groupAge === 4) layerAlpha = 0.04;
+
+      if (groupAge === 0 && i < cam.activeIndex) {
+        layerAlpha = Math.max(0.72, 1 - (cam.activeIndex - i) * 0.06);
+      }
+
+      const elapsed = time - item.startTime;
+      const tr = computeLineTransform(item, elapsed);
+      const finalAlpha = layerAlpha * tr.alpha;
+      if (finalAlpha <= 0.005) continue;
+
+      targetCtx.save();
+      targetCtx.translate(item.worldX, item.worldY);
+      targetCtx.rotate(item.angle + tr.rot);
+      targetCtx.translate(tr.tx, tr.ty);
+      if (Math.abs(tr.skewX) > 0.001) targetCtx.transform(1, 0, tr.skewX, 1, 0, 0);
+      targetCtx.scale(tr.sx, tr.sy);
+      targetCtx.globalAlpha = finalAlpha;
+
+      targetCtx.textBaseline = 'middle';
+      targetCtx.textAlign = 'left';
+
+      targetCtx.shadowColor = 'rgba(0, 0, 0, 0.72)';
+      targetCtx.shadowBlur = Math.max(10, item.fontSize * 0.1);
+      targetCtx.shadowOffsetX = 0;
+      targetCtx.shadowOffsetY = Math.max(4, item.fontSize * 0.045);
+
+      let drawX = -item.width / 2;
+      for (const seg of item.segments) {
+        const segFontSize = getSegmentFontSize(seg, item.fontSize, item.isMixed);
+        targetCtx.font = `900 ${segFontSize}px ${FONT_STACK}`;
+        const segW = targetCtx.measureText(seg.text).width;
+
+        if (seg.highlight && state.variety > 0.1) {
+          const hlElapsed = Math.max(0, elapsed - 0.06 / state.speed);
+          const hlT = clamp(hlElapsed / (0.38 / state.speed), 0, 1);
+          const pulse = 1 + Math.sin(hlT * Math.PI) * Math.exp(-hlT * 3.5) * 0.22 * state.variety;
+          const tilt = Math.sin(hlT * Math.PI) * (seededRand(item.index + 99) > 0.5 ? 0.05 : -0.05) * state.variety;
+
+          targetCtx.save();
+          targetCtx.translate(drawX + segW / 2, 0);
+          targetCtx.rotate(tilt);
+          targetCtx.scale(pulse, pulse);
+          targetCtx.fillStyle = state.accentColor;
+          targetCtx.fillText(seg.text, -segW / 2, 0);
+          targetCtx.restore();
+        } else {
+          targetCtx.fillStyle = seg.highlight ? state.accentColor : state.mainColor;
+          targetCtx.fillText(seg.text, drawX, 0);
+        }
+        drawX += segW;
+      }
+
+      targetCtx.restore();
+    }
+
+    targetCtx.restore();
+  }
+
+  // ==================== 音频与播放控制 ====================
+  function ensureAudioCtx() {
+    if (!state.audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      state.audioCtx = new AC();
+    }
+    if (state.audioCtx.state === 'suspended') state.audioCtx.resume();
+  }
+
+  function stopAudioPlayback() {
+    if (state.audioSource) {
+      try { state.audioSource.stop(); state.audioSource.disconnect(); } catch (_) {}
+      state.audioSource = null;
+    }
+  }
+
+  function startAudioPlayback(offsetSec) {
+    stopAudioPlayback();
+    if (!state.audioBuffer || offsetSec >= state.audioBuffer.duration) return;
+    ensureAudioCtx();
+    const src = state.audioCtx.createBufferSource();
+    src.buffer = state.audioBuffer;
+    src.connect(state.audioCtx.destination);
+    src.start(0, Math.max(0, offsetSec));
+    state.audioSource = src;
+  }
+
+  function setPlaying(play) {
+    if (state.isExporting) return;
+    state.isPlaying = play;
+    if (play) {
+      if (state.currentTime >= state.totalDuration - 0.02) state.currentTime = 0;
+      state.lastRafTime = performance.now();
+      startAudioPlayback(state.currentTime);
+      dom.playPauseBtn.textContent = '⏸ 暂停';
+      dom.playPauseBtn.classList.add('playing');
+      requestAnimationFrame(tick);
+    } else {
+      stopAudioPlayback();
+      dom.playPauseBtn.textContent = '▶ 播放';
+      dom.playPauseBtn.classList.remove('playing');
+    }
+  }
+
+  function tick(now) {
+    if (!state.isPlaying) return;
+    const dt = Math.min((now - state.lastRafTime) / 1000, 0.1);
+    state.lastRafTime = now;
+    state.currentTime += dt;
+
+    if (state.currentTime >= state.totalDuration) {
+      state.currentTime = state.totalDuration;
+      renderFrame(ctx, state.width, state.height, state.currentTime);
+      updateTimelineUI();
+      setPlaying(false);
+      return;
+    }
+
+    renderFrame(ctx, state.width, state.height, state.currentTime);
+    updateTimelineUI();
+    requestAnimationFrame(tick);
+  }
+
+  function updateTimelineUI() {
+    dom.curTimeText.textContent = formatTime(state.currentTime);
+    dom.totalTimeText.textContent = formatTime(state.totalDuration);
+    const ratio = state.totalDuration > 0 ? state.currentTime / state.totalDuration : 0;
+    dom.scrubber.value = Math.round(clamp(ratio, 0, 1) * 1000);
+    dom.hudInfo.textContent = `${state.width}×${state.height} · ${state.fps} FPS · ${state.items.length} 行字幕`;
+  }
+
+  // ==================== 视频导出引擎 ====================
+  function triggerDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function showExportModal(title, modeTag) {
+    dom.exportModalTitle.textContent = title;
+    dom.exportModeTag.textContent = modeTag;
+    dom.exportPercent.textContent = '0%';
+    dom.exportProgressFill.style.width = '0%';
+    dom.exportDetailText.textContent = '初始化渲染管线...';
+    dom.exportOverlay.classList.add('visible');
+  }
+
+  function updateExportProgress(ratio, detail) {
+    const pct = Math.min(100, Math.round(ratio * 100));
+    dom.exportPercent.textContent = `${pct}%`;
+    dom.exportProgressFill.style.width = `${pct}%`;
+    if (detail) dom.exportDetailText.textContent = detail;
+  }
+
+  async function findSupportedH264Config(width, height, fps) {
+    const codecs = ['avc1.64002a', 'avc1.4d002a', 'avc1.42002a', 'avc1.640028', 'avc1.42001f'];
+    for (const codec of codecs) {
+      const cfg = { codec, width, height, bitrate: 10_000_000, framerate: fps, avc: { format: 'avc' } };
+      try {
+        if ((await VideoEncoder.isConfigSupported(cfg)).supported) return cfg;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  async function exportMp4WebCodecs() {
+    const { width, height, fps } = state;
+    const totalFrames = Math.ceil(state.totalDuration * fps);
+    const videoConfig = await findSupportedH264Config(width, height, fps);
+    if (!videoConfig) throw new Error('浏览器不支持 H.264 WebCodecs');
+
+    let audioConfig = null;
+    if (state.audioBuffer && typeof AudioEncoder !== 'undefined') {
+      const cand = {
+        codec: 'mp4a.40.2',
+        numberOfChannels: Math.min(2, state.audioBuffer.numberOfChannels),
+        sampleRate: state.audioBuffer.sampleRate,
+        bitrate: 128_000,
+      };
+      try {
+        if ((await AudioEncoder.isConfigSupported(cand)).supported) audioConfig = cand;
+      } catch (_) {}
+    }
+
+    showExportModal('正在导出标准 MP4...', 'WebCodecs H.264');
+
+    const muxer = new Mp4Muxer.Muxer({
+      target: new Mp4Muxer.ArrayBufferTarget(),
+      video: { codec: 'avc', width, height },
+      audio: audioConfig ? { codec: 'aac', numberOfChannels: audioConfig.numberOfChannels, sampleRate: audioConfig.sampleRate } : undefined,
+      fastStart: 'in-memory',
+    });
+
+    let encodeError = null;
+    const videoEncoder = new VideoEncoder({
+      output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+      error: (e) => { encodeError = e; },
+    });
+    videoEncoder.configure(videoConfig);
+
+    const offCanvas = document.createElement('canvas');
+    offCanvas.width = width;
+    offCanvas.height = height;
+    const offCtx = offCanvas.getContext('2d');
+    const frameDurationUs = Math.round(1_000_000 / fps);
+
+    for (let i = 0; i < totalFrames; i++) {
+      if (state.cancelExport) { videoEncoder.close(); return; }
+      if (encodeError) throw encodeError;
+
+      renderFrame(offCtx, width, height, i / fps);
+      const frame = new VideoFrame(offCanvas, { timestamp: i * frameDurationUs, duration: frameDurationUs });
+      while (videoEncoder.encodeQueueSize > 12) await new Promise(r => setTimeout(r, 8));
+      videoEncoder.encode(frame, { keyFrame: i % (fps * 2) === 0 });
+      frame.close();
+
+      if (i % 4 === 0 || i === totalFrames - 1) {
+        updateExportProgress((i + 1) / totalFrames * (audioConfig ? 0.9 : 1.0), `渲染视频帧 ${i + 1} / ${totalFrames}`);
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+
+    await videoEncoder.flush();
+    videoEncoder.close();
+
+    if (audioConfig && state.audioBuffer && !state.cancelExport) {
+      updateExportProgress(0.92, '正在封装音频轨道...');
+      try {
+        const audioEncoder = new AudioEncoder({
+          output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+          error: (e) => console.warn(e),
+        });
+        audioEncoder.configure(audioConfig);
+
+        const numCh = audioConfig.numberOfChannels;
+        const sampleRate = audioConfig.sampleRate;
+        const maxSamples = Math.min(state.audioBuffer.length, Math.ceil(state.totalDuration * sampleRate));
+        const chunkFrames = 4096;
+
+        for (let offset = 0; offset < maxSamples; offset += chunkFrames) {
+          if (state.cancelExport) break;
+          const frames = Math.min(chunkFrames, maxSamples - offset);
+          const planar = new Float32Array(frames * numCh);
+          for (let ch = 0; ch < numCh; ch++) {
+            planar.set(state.audioBuffer.getChannelData(ch).subarray(offset, offset + frames), ch * frames);
+          }
+          const audioData = new AudioData({
+            format: 'f32-planar', sampleRate, numberOfFrames: frames, numberOfChannels: numCh,
+            timestamp: Math.round((offset / sampleRate) * 1_000_000), data: planar,
+          });
+          audioEncoder.encode(audioData);
+          audioData.close();
+        }
+        await audioEncoder.flush();
+        audioEncoder.close();
+      } catch (e) { console.warn('音频跳过:', e); }
+    }
+
+    if (state.cancelExport) return;
+    updateExportProgress(1.0, '封装完成，开始下载...');
+    muxer.finalize();
+    const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
+    triggerDownload(blob, `kinetic-typography-${state.bgMode === 'green' ? 'greenscreen' : 'black'}.mp4`);
+  }
+
+  async function exportWithMediaRecorder(preferAlphaWebm) {
+    const { width, height, fps } = state;
+    const mimeCandidates = preferAlphaWebm
+      ? ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+      : ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
+    const mimeType = mimeCandidates.find(m => MediaRecorder.isTypeSupported(m)) || '';
+    const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+
+    showExportModal(preferAlphaWebm ? '正在导出透明通道 WebM...' : `正在录制导出 ${ext.toUpperCase()}...`, preferAlphaWebm ? 'VP9 Alpha' : 'MediaRecorder');
+
+    const offCanvas = document.createElement('canvas');
+    offCanvas.width = width;
+    offCanvas.height = height;
+    const offCtx = offCanvas.getContext('2d');
+    const stream = offCanvas.captureStream(fps);
+    let recAudioSrc = null;
+
+    if (state.audioBuffer) {
+      try {
+        ensureAudioCtx();
+        const dest = state.audioCtx.createMediaStreamDestination();
+        recAudioSrc = state.audioCtx.createBufferSource();
+        recAudioSrc.buffer = state.audioBuffer;
+        recAudioSrc.connect(dest);
+        dest.stream.getAudioTracks().forEach(track => stream.addTrack(track));
+      } catch (_) {}
+    }
+
+    const chunks = [];
+    const recorder = new MediaRecorder(stream, { mimeType: mimeType || undefined, videoBitsPerSecond: 12_000_000 });
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunks.push(e.data); };
+    const stopPromise = new Promise(r => { recorder.onstop = r; });
+
+    renderFrame(offCtx, width, height, 0);
+    recorder.start(100);
+    if (recAudioSrc) recAudioSrc.start(0);
+
+    const startWall = performance.now();
+    const totalMs = state.totalDuration * 1000;
+
+    await new Promise((resolve) => {
+      function step(now) {
+        if (state.cancelExport) { resolve(); return; }
+        const elapsedMs = now - startWall;
+        const t = Math.min(elapsedMs / 1000, state.totalDuration);
+        renderFrame(offCtx, width, height, t);
+        updateExportProgress(elapsedMs / totalMs, `实时录制中 ${formatTime(t)} / ${formatTime(state.totalDuration)}`);
+        if (elapsedMs >= totalMs) resolve();
+        else requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    });
+
+    if (recAudioSrc) { try { recAudioSrc.stop(); } catch (_) {} }
+    recorder.stop();
+    await stopPromise;
+    if (state.cancelExport) return;
+
+    const blob = new Blob(chunks, { type: mimeType || `video/${ext}` });
+    triggerDownload(blob, preferAlphaWebm ? 'kinetic-typography-alpha.webm' : `kinetic-typography.${ext}`);
+  }
+
+  async function startExport() {
+    if (state.isExporting || !state.items.length) return;
+    setPlaying(false);
+    state.isExporting = true;
+    state.cancelExport = false;
+    dom.exportBtn.disabled = true;
+    dom.headerExportBtn.disabled = true;
+
+    try {
+      if (state.bgMode === 'transparent') {
+        await exportWithMediaRecorder(true);
+      } else if (typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined') {
+        try { await exportMp4WebCodecs(); }
+        catch (err) {
+          console.warn('WebCodecs 降级:', err);
+          if (!state.cancelExport) await exportWithMediaRecorder(false);
+        }
+      } else {
+        await exportWithMediaRecorder(false);
+      }
+    } catch (err) {
+      alert(`导出失败：${err.message || err}`);
+    } finally {
+      state.isExporting = false;
+      dom.exportBtn.disabled = false;
+      dom.headerExportBtn.disabled = false;
+      dom.exportOverlay.classList.remove('visible');
+    }
+  }
+
+  // ==================== UI 事件绑定 ====================
+  function updateExportBadge() {
+    if (state.bgMode === 'transparent') {
+      dom.exportFormatBadge.textContent = 'WebM (VP9 透明通道)';
+      dom.exportBtn.textContent = '导出透明背景 WebM';
+      dom.canvasFrame.classList.add('checkerboard');
+    } else {
+      const hasWC = typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined';
+      dom.exportFormatBadge.textContent = hasWC ? 'MP4 (H.264 60fps)' : 'MediaRecorder 导出';
+      dom.exportBtn.textContent = '开始渲染并导出 MP4';
+      dom.canvasFrame.classList.remove('checkerboard');
+    }
+  }
+
+  function detectEncoderStatus() {
+    if (typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined') {
+      dom.encoderStatusText.textContent = 'WebCodecs 硬件加速就绪';
+    } else if (typeof MediaRecorder !== 'undefined') {
+      dom.encoderStatusText.textContent = 'MediaRecorder 兼容模式';
+    } else {
+      dom.encoderStatusText.textContent = '浏览器不支持视频导出';
+    }
+    updateExportBadge();
+  }
+
+  dom.importSrtBtn.addEventListener('click', () => dom.srtInput.click());
+  dom.srtInput.addEventListener('change', (e) => {
+    handleSrtFile(e.target.files[0]);
+    dom.srtInput.value = '';
+  });
+
+  dom.smartOptimizeBtn.addEventListener('click', optimizeCurrentScript);
+
+  dom.scriptInput.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dom.scriptInput.classList.add('dragover');
+  });
+  dom.scriptInput.addEventListener('dragleave', () => dom.scriptInput.classList.remove('dragover'));
+  dom.scriptInput.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dom.scriptInput.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file) handleSrtFile(file);
+  });
+
+  document.querySelectorAll('.tag-btn[data-insert]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const ta = dom.scriptInput;
+      const text = btn.dataset.insert;
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+      ta.value = ta.value.slice(0, start) + text + ta.value.slice(end);
+      ta.focus();
+      ta.selectionStart = ta.selectionEnd = start + text.length;
+      rebuildScene();
+    });
+  });
+
+  dom.resetDemoBtn.addEventListener('click', () => {
+    dom.scriptInput.value = DEFAULT_SCRIPT;
+    dom.optBanner.classList.remove('visible');
+    state.autoRotateEvery = 0;
+    dom.autoRotRange.value = '0';
+    dom.autoRotVal.textContent = '关闭';
+    state.currentTime = 0;
+    rebuildScene();
+    setPlaying(true);
+  });
+
+  dom.scriptInput.addEventListener('input', rebuildScene);
+
+  dom.resGroup.addEventListener('click', (e) => {
+    const btn = e.target.closest('.seg-btn');
+    if (!btn) return;
+    dom.resGroup.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const [w, h] = btn.dataset.res.split('x').map(Number);
+    state.width = w;
+    state.height = h;
+    dom.canvas.width = w;
+    dom.canvas.height = h;
+    rebuildScene();
+  });
+
+  dom.bgGroup.addEventListener('click', (e) => {
+    const btn = e.target.closest('.seg-btn');
+    if (!btn) return;
+    dom.bgGroup.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.bgMode = btn.dataset.bg;
+    updateExportBadge();
+    renderFrame(ctx, state.width, state.height, state.currentTime);
+  });
+
+  dom.mainColor.addEventListener('input', (e) => {
+    state.mainColor = e.target.value.toUpperCase();
+    dom.mainColorHex.textContent = state.mainColor;
+    renderFrame(ctx, state.width, state.height, state.currentTime);
+  });
+
+  dom.accentColor.addEventListener('input', (e) => {
+    state.accentColor = e.target.value.toUpperCase();
+    dom.accentColorHex.textContent = state.accentColor;
+    renderFrame(ctx, state.width, state.height, state.currentTime);
+  });
+
+  dom.varietyRange.addEventListener('input', (e) => {
+    const val = parseInt(e.target.value, 10);
+    state.variety = val / 100;
+    dom.varietyVal.textContent = `${val}%`;
+    rebuildScene();
+  });
+
+  dom.rerollFxBtn.addEventListener('click', () => {
+    state.fxSeed++;
+    rebuildScene();
+    state.currentTime = 0;
+    setPlaying(true);
+  });
+
+  dom.speedRange.addEventListener('input', (e) => {
+    state.speed = parseFloat(e.target.value);
+    dom.speedVal.textContent = `${state.speed.toFixed(1)}x`;
+    renderFrame(ctx, state.width, state.height, state.currentTime);
+  });
+
+  dom.bounceRange.addEventListener('input', (e) => {
+    state.bounce = parseFloat(e.target.value);
+    dom.bounceVal.textContent = state.bounce.toFixed(1);
+    renderFrame(ctx, state.width, state.height, state.currentTime);
+  });
+
+  dom.autoRotRange.addEventListener('input', (e) => {
+    state.autoRotateEvery = parseInt(e.target.value, 10);
+    dom.autoRotVal.textContent = state.autoRotateEvery === 0 ? '关闭' : `每 ${state.autoRotateEvery} 行`;
+    rebuildScene();
+  });
+
+  dom.uploadAudioBtn.addEventListener('click', () => dom.audioInput.click());
+  dom.audioInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      ensureAudioCtx();
+      state.audioBuffer = await state.audioCtx.decodeAudioData(await file.arrayBuffer());
+      dom.audioInfo.textContent = `${file.name} (${state.audioBuffer.duration.toFixed(1)}s)`;
+      dom.audioInfo.classList.add('loaded');
+      dom.clearAudioBtn.style.display = 'inline-block';
+    } catch (_) {
+      alert('音频解码失败，请更换标准 MP3 / WAV / M4A 文件。');
+    }
+    dom.audioInput.value = '';
+  });
+
+  dom.clearAudioBtn.addEventListener('click', () => {
+    stopAudioPlayback();
+    state.audioBuffer = null;
+    dom.audioInfo.textContent = '未加载音频文件';
+    dom.audioInfo.classList.remove('loaded');
+    dom.clearAudioBtn.style.display = 'none';
+  });
+
+  dom.playPauseBtn.addEventListener('click', () => setPlaying(!state.isPlaying));
+  dom.replayBtn.addEventListener('click', () => { state.currentTime = 0; setPlaying(true); });
+
+  dom.scrubber.addEventListener('input', (e) => {
+    state.currentTime = (parseInt(e.target.value, 10) / 1000) * state.totalDuration;
+    if (state.isPlaying) startAudioPlayback(state.currentTime);
+    renderFrame(ctx, state.width, state.height, state.currentTime);
+    updateTimelineUI();
+  });
+
+  window.addEventListener('keydown', (e) => {
+    if (document.activeElement === dom.scriptInput) return;
+    if (e.code === 'Space') { e.preventDefault(); setPlaying(!state.isPlaying); }
+    else if (e.key === 'r' || e.key === 'R') { state.currentTime = 0; setPlaying(true); }
+  });
+
+  dom.exportBtn.addEventListener('click', startExport);
+  dom.headerExportBtn.addEventListener('click', startExport);
+  dom.cancelExportBtn.addEventListener('click', () => {
+    state.cancelExport = true;
+    dom.exportDetailText.textContent = '正在取消...';
+  });
+
+  dom.scriptInput.value = DEFAULT_SCRIPT;
+  detectEncoderStatus();
+  rebuildScene();
+  setTimeout(() => setPlaying(true), 250);
+})();
+</script>
+</body>
+</html>
